@@ -1,4 +1,5 @@
 import argparse
+import json
 import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -29,6 +30,36 @@ class CommitReport:
 	smells_count: int
 	smell_types: list[str]
 	most_frequent_smell: str
+
+
+@dataclass
+class DeveloperReport:
+	author: str
+	is_owner: bool
+	is_creator: bool
+	developer_type: str
+	smells_introduced_pct: float
+	ownership_pct: float
+
+
+@dataclass
+class FileReportData:
+	repository: str
+	file_name: str
+	file_creator: str
+	file_owners: list[str]
+	ownership_map: dict[str, float]
+	total_commits: int
+	total_smell_commits: int
+	no_smell_commits: int
+	introduction_commits: int
+	improving_commits: int
+	worsening_commits: int
+	top_inducing_dev: str
+	top_inducing_pct: float
+	file_deleted: bool
+	commit_reports: list[CommitReport]
+	developer_reports: list[DeveloperReport]
 
 
 def _clean_author(value: str | None) -> str:
@@ -63,17 +94,22 @@ def _sanitize_filename(value: str) -> str:
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
+	db_file = _resolve_db_path(db_path)
+	return sqlite3.connect(str(db_file))
+
+
+def _resolve_db_path(db_path: str) -> Path:
 	db_file = Path(db_path)
 	if db_file.exists():
-		return sqlite3.connect(str(db_file))
+		return db_file
 
 	parent_db = Path("..") / db_file.name
 	if parent_db.exists():
-		return sqlite3.connect(str(parent_db))
+		return parent_db
 
 	root_db = Path("../..") / db_file.name
 	if root_db.exists():
-		return sqlite3.connect(str(root_db))
+		return root_db
 
 	raise FileNotFoundError(
 		f"Database not found: {db_file}\n"
@@ -190,7 +226,7 @@ def _build_commit_reports(
 	return sorted(reports, key=lambda r: (_safe_date_key(r.date), r.commit_hash))
 
 
-def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int]:
+def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int, int]:
 	commit_groups: dict[str, list[sqlite3.Row]] = defaultdict(list)
 	for row in rows:
 		commit_groups[str(row["commit_hash"])].append(row)
@@ -202,6 +238,7 @@ def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int]
 
 	introduction_commits = 0
 	improving_commits = 0
+	worsening_commits = 0
 	previous_smells: set[str] = set()
 
 	for commit_hash in ordered_commits:
@@ -218,13 +255,16 @@ def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int]
 		removed = previous_smells - current_smells
 
 		if introduced:
-			introduction_commits += 1
+			if previous_smells:
+				worsening_commits += 1
+			else:
+				introduction_commits += 1
 		if removed:
 			improving_commits += 1
 
 		previous_smells = current_smells
 
-	return introduction_commits, improving_commits
+	return introduction_commits, improving_commits, worsening_commits
 
 
 def _build_report_text(
@@ -232,6 +272,15 @@ def _build_report_text(
 	repository: str,
 	file_name: str,
 ) -> str:
+	report_data = _build_report_data(rows, repository, file_name)
+	return _render_report_text(report_data)
+
+
+def _build_report_data(
+	rows: list[sqlite3.Row],
+	repository: str,
+	file_name: str,
+) -> FileReportData:
 	if not rows:
 		raise ValueError(
 			"No data found for the indicated filters. "
@@ -267,7 +316,7 @@ def _build_report_text(
 
 	total_smell_commits = len(smell_commits_set)
 	no_smell_commits = total_commits - total_smell_commits
-	introduction_commits, improving_commits = _compute_smell_transition_counts(rows)
+	introduction_commits, improving_commits, worsening_commits = _compute_smell_transition_counts(rows)
 
 	if smell_commits_by_author:
 		max_value = max(smell_commits_by_author.values())
@@ -294,14 +343,60 @@ def _build_report_text(
 	for commit in commit_reports:
 		commits_by_author_ordered[commit.author].append(commit)
 
+	developer_reports: list[DeveloperReport] = []
+	for author in sorted(commits_by_author_ordered.keys()):
+		author_commits = commits_by_author_ordered[author]
+		first_three = author_commits[:3]
+		is_newcomer = any(c.commit_hash in smell_commit_set for c in first_three)
+		dev_smell_commits = sum(1 for c in author_commits if c.commit_hash in smell_commit_set)
+		dev_smell_pct = (dev_smell_commits / total_smell_commits * 100.0) if total_smell_commits > 0 else 0.0
+
+		developer_reports.append(
+			DeveloperReport(
+				author=author,
+				is_owner=author in file_owners,
+				is_creator=author == file_creator,
+				developer_type="newcomer" if is_newcomer else "expert",
+				smells_introduced_pct=dev_smell_pct,
+				ownership_pct=ownership_map.get(author, 0.0) * 100.0,
+			)
+		)
+
+	return FileReportData(
+		repository=repository,
+		file_name=file_name,
+		file_creator=file_creator,
+		file_owners=sorted(file_owners),
+		ownership_map=ownership_map,
+		total_commits=total_commits,
+		total_smell_commits=total_smell_commits,
+		no_smell_commits=no_smell_commits,
+		introduction_commits=introduction_commits,
+		improving_commits=improving_commits,
+		worsening_commits=worsening_commits,
+		top_inducing_dev=top_inducing_dev,
+		top_inducing_pct=top_inducing_pct,
+		file_deleted=file_deleted,
+		commit_reports=commit_reports,
+		developer_reports=developer_reports,
+	)
+
+
+def _render_report_text(report_data: FileReportData) -> str:
+	repository = report_data.repository
+	file_name = report_data.file_name
+
 	lines: list[str] = []
 	lines.append("-------------------------------------------------------------------------------")
 	lines.append(f"📦Repository: {repository}")
 	lines.append(f"📄File: {file_name}")
 	lines.append("")
-	lines.append(f"File creator (who introduced the file): {file_creator}")
-	if file_owners:
-		owner_entries = [f"{dev} ({ownership_map[dev] * 100:.2f}%)" for dev in sorted(file_owners)]
+	lines.append(f"File creator (who introduced the file): {report_data.file_creator}")
+	if report_data.file_owners:
+		owner_entries = [
+			f"{dev} ({report_data.ownership_map[dev] * 100:.2f}%)"
+			for dev in report_data.file_owners
+		]
 		owner_repr = ", ".join(owner_entries)
 	else:
 		owner_repr = "No owner with ownership > 0.45"
@@ -310,21 +405,22 @@ def _build_report_text(
 		f"{owner_repr}"
 	)
 	lines.append("")
-	lines.append(f"Total number of commits involving the file: {total_commits}")
-	lines.append(f"Number of commits with smells: {total_smell_commits}")
-	lines.append(f"Number of commits without smells: {no_smell_commits}")
-	lines.append(f"Introduction commits (new smells introduced): {introduction_commits}")
-	lines.append(f"Improving commits (smells removed): {improving_commits}")
+	lines.append(f"Total number of commits involving the file: {report_data.total_commits}")
+	lines.append(f"Number of commits with smells: {report_data.total_smell_commits}")
+	lines.append(f"Number of commits without smells: {report_data.no_smell_commits}")
+	lines.append(f"Introduction commits (new smells introduced): {report_data.introduction_commits}")
+	lines.append(f"Improving commits (smells removed): {report_data.improving_commits}")
+	lines.append(f"Worsening commits (smells added): {report_data.worsening_commits}")
 	lines.append("")
 	lines.append(
 		"Developer with the highest number of inducing-smells: "
-		f"{top_inducing_dev} | {top_inducing_pct:.2f}%"
+		f"{report_data.top_inducing_dev} | {report_data.top_inducing_pct:.2f}%"
 	)
 	lines.append("")
-	lines.append(f"File deleted: {'YES' if file_deleted else 'NO'}")
+	lines.append(f"File deleted: {'YES' if report_data.file_deleted else 'NO'}")
 	lines.append("")
 
-	for commit in commit_reports:
+	for commit in report_data.commit_reports:
 		lines.append("-------------------------------------------------------------------------------")
 		lines.append("")
 		lines.append(f"🔎 Commit: {commit.commit_hash}")
@@ -353,25 +449,243 @@ def _build_report_text(
 		lines.append(f'"{commit.commit_message}"')
 		lines.append("")
 
-
-	for author in sorted(commits_by_author_ordered.keys()):
-		author_commits = commits_by_author_ordered[author]
-		first_three = author_commits[:3]
-		is_newcomer = any(c.commit_hash in smell_commit_set for c in first_three)
-		dev_smell_commits = sum(1 for c in author_commits if c.commit_hash in smell_commit_set)
-		dev_smell_pct = (dev_smell_commits / total_smell_commits * 100.0) if total_smell_commits > 0 else 0.0
-
+	for dev in report_data.developer_reports:
 		lines.append("-------------------------------------------------------------------------------")
 		lines.append("")
-		lines.append(f"🚹 Developer: {author}")
-		lines.append(f"File owner: {'YES' if author in file_owners else 'NO'}")
-		lines.append(f"File creator: {'YES' if author == file_creator else 'NO'}")
-		lines.append(f"Type: {'newcomer' if is_newcomer else 'expert'}")
-		lines.append(f"Percentage of smells introduced: {dev_smell_pct:.2f}%")
+		lines.append(f"🚹 Developer: {dev.author}")
+		lines.append(f"File owner: {'YES' if dev.is_owner else 'NO'}")
+		lines.append(f"File creator: {'YES' if dev.is_creator else 'NO'}")
+		lines.append(f"Type: {dev.developer_type}")
+		lines.append(f"Percentage of smells introduced: {dev.smells_introduced_pct:.2f}%")
+		lines.append(f"Ownership on file commits: {dev.ownership_pct:.2f}%")
 		lines.append("")
 
 	lines.append("-------------------------------------------------------------------------------")
 	return "\n".join(lines)
+
+
+def _init_output_db(conn: sqlite3.Connection) -> None:
+	conn.execute(
+		"""
+		CREATE TABLE IF NOT EXISTS report_summary (
+			dataset TEXT NOT NULL,
+			repository TEXT NOT NULL,
+			file_name TEXT NOT NULL,
+			file_creator TEXT NOT NULL,
+			file_deleted INTEGER NOT NULL,
+			total_commits INTEGER NOT NULL,
+			total_smell_commits INTEGER NOT NULL,
+			no_smell_commits INTEGER NOT NULL,
+			introduction_commits INTEGER NOT NULL,
+			improving_commits INTEGER NOT NULL,
+			worsening_commits INTEGER NOT NULL DEFAULT 0,
+			top_inducing_dev TEXT NOT NULL,
+			top_inducing_pct REAL NOT NULL,
+			file_owners_json TEXT NOT NULL,
+			source_db_path TEXT NOT NULL,
+			generated_at TEXT NOT NULL,
+			PRIMARY KEY(dataset, repository, file_name)
+		)
+		"""
+	)
+
+	table_info = conn.execute("PRAGMA table_info(report_summary)").fetchall()
+	existing_columns = {row[1] for row in table_info}
+	if "worsening_commits" not in existing_columns:
+		conn.execute(
+			"ALTER TABLE report_summary ADD COLUMN worsening_commits INTEGER NOT NULL DEFAULT 0"
+		)
+
+	conn.execute(
+		"""
+		CREATE TABLE IF NOT EXISTS report_commit_details (
+			dataset TEXT NOT NULL,
+			repository TEXT NOT NULL,
+			file_name TEXT NOT NULL,
+			commit_hash TEXT NOT NULL,
+			date TEXT NOT NULL,
+			author TEXT NOT NULL,
+			commit_message TEXT NOT NULL,
+			nearest_future_release_tag TEXT NOT NULL,
+			nearest_future_release_date TEXT NOT NULL,
+			nearest_previous_release_tag TEXT NOT NULL,
+			nearest_previous_release_date TEXT NOT NULL,
+			smells_count INTEGER NOT NULL,
+			smell_types_json TEXT NOT NULL,
+			most_frequent_smell TEXT NOT NULL,
+			PRIMARY KEY(dataset, repository, file_name, commit_hash)
+		)
+		"""
+	)
+
+	conn.execute(
+		"""
+		CREATE TABLE IF NOT EXISTS report_developer_details (
+			dataset TEXT NOT NULL,
+			repository TEXT NOT NULL,
+			file_name TEXT NOT NULL,
+			author TEXT NOT NULL,
+			is_owner INTEGER NOT NULL,
+			is_creator INTEGER NOT NULL,
+			developer_type TEXT NOT NULL,
+			smells_introduced_pct REAL NOT NULL,
+			ownership_pct REAL NOT NULL,
+			PRIMARY KEY(dataset, repository, file_name, author)
+		)
+		"""
+	)
+
+	conn.commit()
+
+
+def _persist_report_data(
+	conn: sqlite3.Connection,
+	report_data: FileReportData,
+	dataset: str,
+	source_db_path: str,
+) -> None:
+	_init_output_db(conn)
+	generated_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+	owners_json = json.dumps(
+		[
+			{
+				"author": owner,
+				"ownership_pct": round(report_data.ownership_map.get(owner, 0.0) * 100.0, 2),
+			}
+			for owner in report_data.file_owners
+		],
+		ensure_ascii=True,
+	)
+
+	base_params = (dataset, report_data.repository, report_data.file_name)
+	conn.execute(
+		"DELETE FROM report_commit_details WHERE dataset = ? AND repository = ? AND file_name = ?",
+		base_params,
+	)
+	conn.execute(
+		"DELETE FROM report_developer_details WHERE dataset = ? AND repository = ? AND file_name = ?",
+		base_params,
+	)
+	conn.execute(
+		"DELETE FROM report_summary WHERE dataset = ? AND repository = ? AND file_name = ?",
+		base_params,
+	)
+
+	conn.execute(
+		"""
+		INSERT INTO report_summary (
+			dataset,
+			repository,
+			file_name,
+			file_creator,
+			file_deleted,
+			total_commits,
+			total_smell_commits,
+			no_smell_commits,
+			introduction_commits,
+			improving_commits,
+			worsening_commits,
+			top_inducing_dev,
+			top_inducing_pct,
+			file_owners_json,
+			source_db_path,
+			generated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		""",
+		(
+			dataset,
+			report_data.repository,
+			report_data.file_name,
+			report_data.file_creator,
+			1 if report_data.file_deleted else 0,
+			report_data.total_commits,
+			report_data.total_smell_commits,
+			report_data.no_smell_commits,
+			report_data.introduction_commits,
+			report_data.improving_commits,
+			report_data.worsening_commits,
+			report_data.top_inducing_dev,
+			report_data.top_inducing_pct,
+			owners_json,
+			source_db_path,
+			generated_at,
+		),
+	)
+
+	conn.executemany(
+		"""
+		INSERT INTO report_commit_details (
+			dataset,
+			repository,
+			file_name,
+			commit_hash,
+			date,
+			author,
+			commit_message,
+			nearest_future_release_tag,
+			nearest_future_release_date,
+			nearest_previous_release_tag,
+			nearest_previous_release_date,
+			smells_count,
+			smell_types_json,
+			most_frequent_smell
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		""",
+		[
+			(
+				dataset,
+				report_data.repository,
+				report_data.file_name,
+				commit.commit_hash,
+				commit.date,
+				commit.author,
+				commit.commit_message,
+				commit.nearest_future_release_tag,
+				commit.nearest_future_release_date,
+				commit.nearest_previous_release_tag,
+				commit.nearest_previous_release_date,
+				commit.smells_count,
+				json.dumps(commit.smell_types, ensure_ascii=True),
+				commit.most_frequent_smell,
+			)
+			for commit in report_data.commit_reports
+		],
+	)
+
+	conn.executemany(
+		"""
+		INSERT INTO report_developer_details (
+			dataset,
+			repository,
+			file_name,
+			author,
+			is_owner,
+			is_creator,
+			developer_type,
+			smells_introduced_pct,
+			ownership_pct
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		""",
+		[
+			(
+				dataset,
+				report_data.repository,
+				report_data.file_name,
+				dev.author,
+				1 if dev.is_owner else 0,
+				1 if dev.is_creator else 0,
+				dev.developer_type,
+				dev.smells_introduced_pct,
+				dev.ownership_pct,
+			)
+			for dev in report_data.developer_reports
+		],
+	)
+
+	conn.commit()
 
 
 def main() -> None:
@@ -394,36 +708,59 @@ def main() -> None:
 	parser.add_argument(
 		"--output",
 		default=None,
-		help="Output .txt file (valid in single mode). If omitted, uses reports/<dataset>/...",
+		help="Optional .txt output file (single mode only).",
+	)
+	parser.add_argument(
+		"--report-db",
+		default=None,
+		help="Optional SQLite output DB path for generated reports. Default: same DB selected with --db/--dataset.",
+	)
+	parser.add_argument(
+		"--write-txt",
+		action="store_true",
+		help="Also generate .txt reports in batch mode (secondary output).",
 	)
 
 	args = parser.parse_args()
 	db_path = args.db if args.db else DB_DEFAULTS[args.dataset]
+	resolved_source_db = _resolve_db_path(db_path)
 	base_dir = Path(__file__).resolve().parent
 	out_dir = base_dir / "reports" / args.dataset
 	out_dir.mkdir(parents=True, exist_ok=True)
+	output_db_path = Path(args.report_db) if args.report_db else resolved_source_db
+	if output_db_path.parent and str(output_db_path.parent) != ".":
+		output_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+	with sqlite3.connect(str(output_db_path)) as report_conn:
+		_init_output_db(report_conn)
 
 
 	if args.repository and args.file_name:
 		with _connect(db_path) as conn:
 			rows = _fetch_rows(conn, args.repository, args.file_name)
 
-		report_text = _build_report_text(
+		report_data = _build_report_data(
 			rows,
 			args.repository,
 			args.file_name,
 		)
+		report_text = _render_report_text(report_data)
 		print(report_text)
 
-		default_output = out_dir / f"{_sanitize_filename(args.repository)}_{_sanitize_filename(args.file_name)}.txt"
-		out_path = Path(args.output) if args.output else default_output
-		if out_path.parent and str(out_path.parent) != ".":
-			out_path.parent.mkdir(parents=True, exist_ok=True)
-		out_path.write_text(report_text, encoding="utf-8")
+		with sqlite3.connect(str(output_db_path)) as report_conn:
+			_persist_report_data(report_conn, report_data, args.dataset, db_path)
+
+		if args.output:
+			out_path = Path(args.output)
+			if out_path.parent and str(out_path.parent) != ".":
+				out_path.parent.mkdir(parents=True, exist_ok=True)
+			out_path.write_text(report_text, encoding="utf-8")
 		print("-------------------------")
 		print(f"📦Repository: {args.repository}")
 		print(f"📄File: {args.file_name}")
-		print("✅Report generated")
+		print(f"✅Report persisted on DB: {output_db_path}")
+		if args.output:
+			print(f"📝Secondary TXT report: {args.output}")
 		print("-------------------------")
 		return
 
@@ -452,23 +789,32 @@ def main() -> None:
 		try:
 			with _connect(db_path) as conn:
 				rows = _fetch_rows(conn, repository, file_name)
-			report_text = _build_report_text(
+			report_data = _build_report_data(
 				rows,
 				repository,
 				file_name,
 			)
-			output_path = out_dir / f"{_sanitize_filename(repository)}_{_sanitize_filename(file_name)}.txt"
-			output_path.write_text(report_text, encoding="utf-8")
+
+			with sqlite3.connect(str(output_db_path)) as report_conn:
+				_persist_report_data(report_conn, report_data, args.dataset, db_path)
+
+			if args.write_txt:
+				report_text = _render_report_text(report_data)
+				output_path = out_dir / f"{_sanitize_filename(repository)}_{_sanitize_filename(file_name)}.txt"
+				output_path.write_text(report_text, encoding="utf-8")
 			ok += 1
 			print("-------------------------")
 			print(f"📦Repository: {repository}")
 			print(f"📄File: {file_name}")
-			print("✅Report generated")
+			print("✅Report persisted on DB")
+			if args.write_txt:
+				print("📝Secondary TXT report generated")
 		except Exception as exc:
 			fail += 1
 			print(f"[ERROR] {repository} | {file_name}: {exc}")
 
-	print(f"\nBatch completed: {ok} reports created, {fail} errors.")
+	print(f"\nBatch completed: {ok}/{batch_total} reports saved in DB, {fail} errors.")
+	print(f"DB output: {output_db_path}")
 
 
 if __name__ == "__main__":

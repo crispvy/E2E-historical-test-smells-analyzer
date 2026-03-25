@@ -105,9 +105,10 @@ project-root
 
 Before running the project ensure the following tools are installed:
 
-* Python 3.8+
+* [Python 3.8+](https://www.python.org/)
 * pip
-* Git
+* [Git](https://git-scm.com/)
+* [R](https://www.r-project.org/)
 
 ---
 
@@ -231,23 +232,43 @@ This configuration:
 
 ---
 
+
 # 6. Empirical analysis tools
 
 This section describes the scripts available in the `analyses/` folder for generating reports and visualizations from the historical databases.
-To execute the scripts, first navigate to the `analyses/` director.
 
 ---
+
+## Analysis for a single repository/file:
+
+The following section concerns the analysis and visualization of data for a single **repository/file**.
+
+
 
 ## a) Textual Report of Ownership and Smells
 
 Script: `analyses/e2e_smells_analyzer.py`
 
-Generates a detailed textual report about a test file.
+Generates ownership/smell analytics for a test file and persists the results in SQLite.
+
+The script uses the selected historical DB as the **main output** and stores structured report data in:
+
+* `report_summary`
+* `report_commit_details`
+* `report_developer_details`
+
+Text report generation (`.txt`) is **secondary** and only produced on request.
 
 **▶️ Single execution (for a repository / specific file):**
 
 ```
 python analyses/e2e_smells_analyzer.py <repository> <file_name> --dataset js/ts
+```
+
+Generate also a `.txt` file (optional):
+
+```
+python analyses/e2e_smells_analyzer.py <repository> <file_name> --dataset js/ts --output analyses/reports/js/my_report.txt
 ```
 
 **⏩ Batch execution (all files with smells):**
@@ -256,17 +277,32 @@ python analyses/e2e_smells_analyzer.py <repository> <file_name> --dataset js/ts
 python analyses/e2e_smells_analyzer.py --dataset js/ts
 ```
 
+Generate also `.txt` reports in batch mode (optional):
+
+```
+python analyses/e2e_smells_analyzer.py --dataset js/ts --write-txt
+```
+
 **✴️ Main parameters:**
 
 * `<repository>`: repository name as stored in the DB
 * `<file_name>`: path or name of the test file
 * `--dataset`: required, `js` or `ts`
 * `--db`: (optional) path to the SQLite database
-* `--output`: (optional) output file path
+* `--report-db`: (optional) output DB path for report tables (default: same DB selected with `--db`/`--dataset`)
+* `--output`: (optional, single mode) output `.txt` path
+* `--write-txt`: (optional, batch mode) also generates `.txt` reports
 
 **🔀 Output:**
 
-Report files can be found in the **analyses/reports folder** after they have been generated.
+* **Primary output**: report data saved in SQLite report tables.
+* **Secondary output**: `.txt` files only when requested with `--output` (single mode) or `--write-txt` (batch mode), saved in `analyses/reports/<dataset>/`.
+
+The summary now includes these transition metrics:
+
+* `Introduction commits (new smells introduced)`
+* `Improving commits (smells removed)`
+* `Worsening commits (smells added)`
 
 ---
 
@@ -318,6 +354,61 @@ python analyses/e2e_smells_report_plots.py --reports-dir analyses/reports
 **🔀 Output:**
 
 Plots are saved under `analyses/plots/ts/` and `analyses/plots/js/`, inside one folder per repository/file (`<repo>_<file>`).
+
+---
+
+ ## Aggregated / multi-repository analysis:
+
+The following section concerns statistical analyses and visualizations that aggregate data from all repositories/files, for a general study of the entire work.
+
+**⚠️​ Note:** To run the scripts in this section you must first run `analyses/e2e_smells_analyzer.py`
+
+## c) Ridge Plot: Commit Distance from Closest Release (JS/TS)
+
+Script:
+
+* `analyses/e2e_density_plot.R`
+
+This script generates a **ridge plot** of the signed distance (in days) between each commit and its closest release date, stratified by transition type:
+
+* `No-change`
+* `Initial`
+* `Improving`
+* `Worsening`
+
+The script reads data from `report_commit_details` in:
+
+* `historical_smellsJS.db`
+* `historical_smellsTS.db`
+
+and produces **two separate plots**:
+
+* JS plot
+* TS plot
+
+### R execution
+
+From project root:
+
+```powershell
+Rscript analyses/e2e_density_plot.R
+```
+
+From `analyses/`:
+
+```powershell
+Rscript .\e2e_density_plot.R
+```
+
+Optional parameters:
+
+* `--js-db <path>`
+* `--ts-db <path>`
+
+### Output files
+
+* `analyses/plots/release_distance_ridge_js_R.png`
+* `analyses/plots/release_distance_ridge_ts_R.png`
 
 ---
 
