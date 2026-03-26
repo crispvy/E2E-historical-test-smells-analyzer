@@ -90,6 +90,14 @@ project-root
 │  │
 │  ├── e2e_smells_analyzer.py
 │  ├── e2e_smells_report_plots.py
+│  ├── e2e_empirical_analyzer.R
+│  ├── R_scripts/
+│  │  ├── main.R
+│  │  └── jobs/
+│  │     ├── 01_ridge_release.R
+│  │     ├── 02_smells_catalog.R
+│  │     ├── 03_startup_tables.R
+│  │     └── 04_ownership_tables.R
 │  │
 │
 ├── history_smells-analyzerJS.py
@@ -363,52 +371,104 @@ The following section concerns statistical analyses and visualizations that aggr
 
 **⚠️​ Note:** To run the scripts in this section you must first run `analyses/e2e_smells_analyzer.py`
 
-## c) Ridge Plot: Commit Distance from Closest Release (JS/TS)
+## c) Empirical R Analysis (Aggregated JS/TS)
 
 Script:
 
-* `analyses/e2e_density_plot.R`
+* `analyses/e2e_empirical_analyzer.R`
 
-This script generates a **ridge plot** of the signed distance (in days) between each commit and its closest release date, stratified by transition type:
+This script performs aggregated empirical analyses from `historical_smellsJS.db` and `historical_smellsTS.db`.
 
-* `No-change`
-* `Initial`
-* `Improving`
-* `Worsening`
+Main outputs include:
 
-The script reads data from `report_commit_details` in:
+* **ridge plots** of signed distance (days) from closest release by transition type (`No-change`, `Initial`, `Improving`, `Worsening`)
+* **release proximity summary tables**
+* **startup-bin tables** by bad practice and variation type
+* **ownership/newcomer tables** by bad practice and variation type
+
+The script reads data from:
+
+* `report_commit_details`
+* `historical_smells`
+* `report_developer_details`
+
+in:
 
 * `historical_smellsJS.db`
 * `historical_smellsTS.db`
 
-and produces **two separate plots**:
-
-* JS plot
-* TS plot
-
-### R execution
+### R execution (single script)
 
 From project root:
 
 ```powershell
-Rscript analyses/e2e_density_plot.R
+Rscript analyses/e2e_empirical_analyzer.R
 ```
 
 From `analyses/`:
 
 ```powershell
-Rscript .\e2e_density_plot.R
+Rscript .\e2e_empirical_analyzer.R
 ```
+
+Selective modes:
+
+* `--ridge-release-only`
+* `--smells-only`
+* `--startup-tables-only`
+* `--ownership-tables-only`
 
 Optional parameters:
 
 * `--js-db <path>`
 * `--ts-db <path>`
 
-### Output files
+### R execution (modular pipeline + parallel)
+
+Orchestrator script:
+
+* `analyses/R_scripts/main.R`
+
+Run all jobs sequentially:
+
+```powershell
+Rscript analyses/R_scripts/main.R
+```
+
+Run all jobs in parallel:
+
+```powershell
+Rscript analyses/R_scripts/main.R --parallel --workers 2
+```
+
+Run one specific job:
+
+```powershell
+Rscript analyses/R_scripts/main.R --only ridge
+Rscript analyses/R_scripts/main.R --only smells
+Rscript analyses/R_scripts/main.R --only startup
+Rscript analyses/R_scripts/main.R --only ownership
+```
+
+Main options for `main.R`:
+
+* `--parallel`
+* `--workers <n>`
+* `--only ridge|smells|startup|ownership`
+* `--js-db <path>`
+* `--ts-db <path>`
+
+### Output files (examples)
 
 * `analyses/plots/release_distance_ridge_js_R.png`
 * `analyses/plots/release_distance_ridge_ts_R.png`
+* `analyses/plots/release_cycle_proximity_summary_js_R.png`
+* `analyses/plots/release_cycle_proximity_summary_ts_R.png`
+* `analyses/plots/test_smells_catalog_table_R.png`
+* `analyses/plots/startup_bins_by_bp_variation_js_R.png`
+* `analyses/plots/startup_bins_by_bp_variation_ts_R.png`
+* `analyses/plots/ownership_newcomer_by_bp_variation_js_R.png`
+* `analyses/plots/ownership_newcomer_by_bp_variation_ts_R.png`
 
 ---
 
