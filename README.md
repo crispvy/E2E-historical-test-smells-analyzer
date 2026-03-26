@@ -423,7 +423,7 @@ Optional parameters:
 * `--js-db <path>`
 * `--ts-db <path>`
 
-### R execution (modular pipeline + parallel)
+### ▶️ R execution (modular pipeline + parallel)
 
 Orchestrator script:
 
@@ -450,7 +450,7 @@ Rscript analyses/R_scripts/main.R --only startup
 Rscript analyses/R_scripts/main.R --only ownership
 ```
 
-Main options for `main.R`:
+✴️ Main options for `main.R`:
 
 * `--parallel`
 * `--workers <n>`
@@ -458,7 +458,7 @@ Main options for `main.R`:
 * `--js-db <path>`
 * `--ts-db <path>`
 
-### Output files (examples)
+### 🔀 Output files (examples)
 
 * `analyses/plots/release_distance_ridge_js_R.png`
 * `analyses/plots/release_distance_ridge_ts_R.png`
