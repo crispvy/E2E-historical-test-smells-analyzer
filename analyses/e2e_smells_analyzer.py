@@ -25,6 +25,7 @@ class CommitReport:
 	date: str
 	author: str
 	commit_message: str
+	transition_type: str
 	nearest_future_release_tag: str
 	nearest_future_release_date: str
 	nearest_previous_release_tag: str
@@ -256,6 +257,7 @@ def _fetch_rows(conn: sqlite3.Connection, repository: str, file_name: str) -> li
 
 def _build_commit_reports(
 	rows: list[sqlite3.Row],
+	transition_map: dict[str, str] | None = None,
 ) -> list[CommitReport]:
 	commit_groups: dict[str, list[sqlite3.Row]] = defaultdict(list)
 	for row in rows:
@@ -294,6 +296,7 @@ def _build_commit_reports(
 				date=date,
 				author=author,
 				commit_message=commit_message,
+				transition_type=(transition_map or {}).get(commit_hash, "none"),
 				nearest_future_release_tag=_clean_str(first["nearest_future_release_tag"]),
 				nearest_future_release_date=_clean_str(first["nearest_future_release_date"]),
 				nearest_previous_release_tag=_clean_str(first["nearest_previous_release_tag"]),
@@ -307,7 +310,7 @@ def _build_commit_reports(
 	return sorted(reports, key=lambda r: (_safe_date_key(r.date), r.commit_hash))
 
 
-def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int, int]:
+def _compute_commit_transition_types(rows: list[sqlite3.Row]) -> dict[str, str]:
 	commit_groups: dict[str, list[sqlite3.Row]] = defaultdict(list)
 	for row in rows:
 		commit_groups[str(row["commit_hash"])].append(row)
@@ -317,9 +320,7 @@ def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int,
 		key=lambda ch: (_safe_date_key(commit_groups[ch][0]["date"]), ch),
 	)
 
-	introduction_commits = 0
-	improving_commits = 0
-	worsening_commits = 0
+	transition_map: dict[str, str] = {}
 	previous_smells: set[str] = set()
 
 	for commit_hash in ordered_commits:
@@ -332,18 +333,36 @@ def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int,
 			line = "" if row["line"] is None else str(row["line"])
 			current_smells.add(f"{smell_type}|{method}|{line}")
 
-		introduced = current_smells - previous_smells
-		removed = previous_smells - current_smells
-
-		if introduced:
-			if previous_smells:
-				worsening_commits += 1
+		if not previous_smells and current_smells:
+			transition_type = "introduction"
+		else:
+			delta = len(current_smells) - len(previous_smells)
+			if delta > 0:
+				transition_type = "worsening"
+			elif delta < 0:
+				transition_type = "improving"
 			else:
-				introduction_commits += 1
-		if removed:
-			improving_commits += 1
+				transition_type = "none"
 
+		transition_map[commit_hash] = transition_type
 		previous_smells = current_smells
+
+	return transition_map
+
+
+def _compute_smell_transition_counts(rows: list[sqlite3.Row]) -> tuple[int, int, int]:
+	transition_map = _compute_commit_transition_types(rows)
+	introduction_commits = 0
+	improving_commits = 0
+	worsening_commits = 0
+
+	for transition_type in transition_map.values():
+		if transition_type == "introduction":
+			introduction_commits += 1
+		if transition_type == "worsening":
+			worsening_commits += 1
+		if transition_type == "improving":
+			improving_commits += 1
 
 	return introduction_commits, improving_commits, worsening_commits
 
@@ -418,7 +437,8 @@ def _build_report_data(
 		earliest = sorted(rows, key=lambda r: (_safe_date_key(r["date"]), str(r["commit_hash"])))
 		file_creator = _clean_author(earliest[0]["commit_author"])
 
-	commit_reports = _build_commit_reports(rows)
+	transition_map = _compute_commit_transition_types(rows)
+	commit_reports = _build_commit_reports(rows, transition_map)
 
 	commits_by_author_ordered: dict[str, list[CommitReport]] = defaultdict(list)
 	smell_commit_set = {c.commit_hash for c in commit_reports if c.smells_count > 0}
@@ -587,6 +607,7 @@ def _init_output_db(conn: sqlite3.Connection) -> None:
 			date TEXT NOT NULL,
 			author TEXT NOT NULL,
 			commit_message TEXT NOT NULL,
+			transition_type TEXT NOT NULL DEFAULT 'none',
 			nearest_future_release_tag TEXT NOT NULL,
 			nearest_future_release_date TEXT NOT NULL,
 			nearest_previous_release_tag TEXT NOT NULL,
@@ -598,6 +619,13 @@ def _init_output_db(conn: sqlite3.Connection) -> None:
 		)
 		"""
 	)
+
+	table_info = conn.execute("PRAGMA table_info(report_commit_details)").fetchall()
+	existing_columns = {row[1] for row in table_info}
+	if "transition_type" not in existing_columns:
+		conn.execute(
+			"ALTER TABLE report_commit_details ADD COLUMN transition_type TEXT NOT NULL DEFAULT 'none'"
+		)
 
 	conn.execute(
 		"""
@@ -704,6 +732,7 @@ def _persist_report_data(
 			date,
 			author,
 			commit_message,
+			transition_type,
 			nearest_future_release_tag,
 			nearest_future_release_date,
 			nearest_previous_release_tag,
@@ -712,7 +741,7 @@ def _persist_report_data(
 			smell_types_json,
 			most_frequent_smell
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		""",
 		[
 			(
@@ -723,6 +752,7 @@ def _persist_report_data(
 				commit.date,
 				commit.author,
 				commit.commit_message,
+				commit.transition_type,
 				commit.nearest_future_release_tag,
 				commit.nearest_future_release_date,
 				commit.nearest_previous_release_tag,

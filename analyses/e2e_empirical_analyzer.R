@@ -440,6 +440,7 @@ save_release_proximity_table_png <- function(summary_table, output_png, dataset_
   body_values <- summary_table[, c("No-change", "Introd.", "Improv.", "Worsen."), drop = FALSE]
 
   n_body <- nrow(summary_table)
+  metric_wrapped <- vapply(metric_values, function(x) paste(strwrap(x, width = 20), collapse = "\n"), character(1))
 
   col_widths <- c(0.37, 0.1575, 0.1575, 0.1575, 0.1575)
   x_edges <- c(0, cumsum(col_widths))
@@ -455,7 +456,8 @@ save_release_proximity_table_png <- function(summary_table, output_png, dataset_
   y_header1_bottom <- y_top - header1_h
   y_header2_bottom <- y_header1_bottom - header2_h
 
-  png(output_png, width = 1700, height = 750, res = 170)
+  png_height <- max(900, 420 + as.integer(110 * n_body))
+  png(output_png, width = 2200, height = png_height, res = 180)
   grid.newpage()
 
   grid.rect(
@@ -503,7 +505,7 @@ save_release_proximity_table_png <- function(summary_table, output_png, dataset_
     x = unit(x_edges[1] + 0.02, "npc"),
     y = unit((y_header1_bottom + y_header2_bottom) / 2, "npc"),
     just = c("left", "center"),
-    gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.9)
+    gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.55)
   )
 
   for (j in 2:5) {
@@ -511,18 +513,18 @@ save_release_proximity_table_png <- function(summary_table, output_png, dataset_
       labels[[j]],
       x = unit(x_centers[j], "npc"),
       y = unit((y_header1_bottom + y_header2_bottom) / 2, "npc"),
-      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.8)
+      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.45)
     )
   }
 
   for (i in seq_len(n_body)) {
     y_center <- y_header2_bottom - (i - 0.5) * body_h
     grid.text(
-      metric_values[[i]],
+      metric_wrapped[[i]],
       x = unit(x_edges[1] + 0.02, "npc"),
       y = unit(y_center, "npc"),
       just = c("left", "center"),
-      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.7)
+      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.28, lineheight = 1.02)
     )
 
     for (j in 1:4) {
@@ -530,7 +532,7 @@ save_release_proximity_table_png <- function(summary_table, output_png, dataset_
         as.character(body_values[i, j]),
         x = unit(x_centers[j + 1], "npc"),
         y = unit(y_center, "npc"),
-        gp = gpar(fontfamily = "serif", cex = 1.7)
+        gp = gpar(fontfamily = "serif", cex = 1.25)
       )
     }
   }
@@ -750,9 +752,13 @@ build_startup_bins_table <- function(report_frame, smells_frame, dataset_label) 
     return(NULL)
   }
 
+  present_names <- catalog$smell_name[match(present_ids, catalog$smell_id)]
   row_index <- c(present_ids, "Total")
+  row_labels <- c(sprintf("%s - %s", present_ids, present_names), "Total")
   col_index <- as.vector(outer(outcome_order, bin_order, paste, sep = "|"))
   percentages <- matrix(0, nrow = length(row_index), ncol = length(col_index), dimnames = list(row_index, col_index))
+  absolute_counts <- matrix(0, nrow = length(row_index), ncol = length(col_index), dimnames = list(row_index, col_index))
+  denominators <- matrix(0, nrow = length(row_index), ncol = length(col_index), dimnames = list(row_index, col_index))
 
   for (smell_id in present_ids) {
     subset_smell <- merged[merged$smell_id == smell_id, ]
@@ -763,7 +769,10 @@ build_startup_bins_table <- function(report_frame, smells_frame, dataset_label) 
         next
       }
       counts <- table(factor(subset_outcome$time_bin, levels = bin_order))
-      percentages[smell_id, paste(outcome, bin_order, sep = "|")] <- round(100 * as.numeric(counts) / denom)
+      key <- paste(outcome, bin_order, sep = "|")
+      absolute_counts[smell_id, key] <- as.integer(counts)
+      denominators[smell_id, key] <- denom
+      percentages[smell_id, key] <- round(100 * as.numeric(counts) / denom)
     }
   }
 
@@ -777,10 +786,11 @@ build_startup_bins_table <- function(report_frame, smells_frame, dataset_label) 
       next
     }
     counts <- table(factor(subset_outcome$time_bin, levels = bin_order))
-    percentages["Total", paste(outcome, bin_order, sep = "|")] <- round(100 * as.numeric(counts) / denom)
+    key <- paste(outcome, bin_order, sep = "|")
+    absolute_counts["Total", key] <- as.integer(counts)
+    denominators["Total", key] <- denom
+    percentages["Total", key] <- round(100 * as.numeric(counts) / denom)
   }
-
-  row_labels <- c(present_ids, "Total")
 
   list(
     dataset_label = dataset_label,
@@ -788,8 +798,11 @@ build_startup_bins_table <- function(report_frame, smells_frame, dataset_label) 
     outcome_header = outcome_header,
     bin_order = bin_order,
     n_by_outcome = n_by_outcome,
+    row_ids = row_index,
     row_labels = row_labels,
-    percentages = percentages
+    percentages = percentages,
+    absolute_counts = absolute_counts,
+    denominators = denominators
   )
 }
 
@@ -803,26 +816,29 @@ save_startup_bins_table_png <- function(table_data, output_png) {
     dir.create(output_dir, recursive = TRUE)
   }
 
+  row_ids <- table_data$row_ids
   row_labels <- table_data$row_labels
   pct <- table_data$percentages
+  abs_counts <- table_data$absolute_counts
+  denoms <- table_data$denominators
   outcome_order <- table_data$outcome_order
   outcome_header <- table_data$outcome_header
   bin_order <- table_data$bin_order
   n_by_outcome <- table_data$n_by_outcome
 
   n_rows <- length(row_labels)
-  first_col_w <- 0.16
-  body_w <- 0.79
+  first_col_w <- 0.24
+  body_w <- 0.74
   cell_w <- body_w / (length(outcome_order) * length(bin_order))
 
-  x_left <- 0.03
+  x_left <- 0.02
   x_edges <- c(x_left, x_left + first_col_w, x_left + first_col_w + cumsum(rep(cell_w, length(outcome_order) * length(bin_order))))
 
-  top_margin <- 0.06
+  top_margin <- 0.05
   bottom_margin <- 0.05
-  caption_h <- 0.16
+  caption_h <- 0.13
   header1_h <- 0.09
-  header2_h <- 0.08
+  header2_h <- 0.075
   body_h <- (1 - top_margin - bottom_margin - caption_h - header1_h - header2_h) / max(n_rows, 1)
 
   y_top <- 1 - top_margin
@@ -831,7 +847,7 @@ save_startup_bins_table_png <- function(table_data, output_png) {
   y_header2_bottom <- y_header1_bottom - header2_h
   y_bottom <- y_header2_bottom - n_rows * body_h
 
-  png(output_png, width = 2600, height = max(1200, 260 + as.integer(90 * n_rows)), res = 180)
+  png(output_png, width = 5200, height = max(1600, 450 + as.integer(125 * n_rows)), res = 190)
   grid.newpage()
 
   grid.rect(
@@ -839,7 +855,7 @@ save_startup_bins_table_png <- function(table_data, output_png) {
     y = unit(0.5, "npc"),
     width = unit(1, "npc"),
     height = unit(1, "npc"),
-    gp = gpar(fill = "#d9d9d9", col = NA)
+    gp = gpar(fill = "#f4f4f4", col = NA)
   )
 
   grid.lines(
@@ -849,10 +865,10 @@ save_startup_bins_table_png <- function(table_data, output_png) {
   )
 
   grid.text(
-    "Bad\npractice",
+    "Bad practice\n(ID - Name)",
     x = unit((x_edges[1] + x_edges[2]) / 2, "npc"),
     y = unit((y_caption_bottom + y_header2_bottom) / 2, "npc"),
-    gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.28)
+    gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.13)
   )
 
   group_size <- length(bin_order)
@@ -868,7 +884,7 @@ save_startup_bins_table_png <- function(table_data, output_png) {
       header_text,
       x = unit(group_center, "npc"),
       y = unit((y_caption_bottom + y_header1_bottom) / 2, "npc"),
-      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.2)
+      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.06)
     )
 
     grid.lines(
@@ -884,7 +900,7 @@ save_startup_bins_table_png <- function(table_data, output_png) {
         bin_order[[b]],
         x = unit(x_center, "npc"),
         y = unit((y_header1_bottom + y_header2_bottom) / 2, "npc"),
-        gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.14)
+        gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.0)
       )
     }
   }
@@ -895,16 +911,36 @@ save_startup_bins_table_png <- function(table_data, output_png) {
     gp = gpar(col = "black", lwd = 1.6)
   )
 
+  wrap_row_label <- function(text, width = 30) {
+    paste(strwrap(text, width = width), collapse = "\n")
+  }
+
+  format_cell <- function(pct_value, abs_value, denom_value) {
+    sprintf("%d%%\n[%d]", as.integer(pct_value), as.integer(abs_value))
+  }
+
   for (i in seq_len(n_rows)) {
     y_center <- y_header2_bottom - (i - 0.5) * body_h
-    is_total <- row_labels[[i]] == "Total"
+    row_id <- row_ids[[i]]
+    row_label <- row_labels[[i]]
+    is_total <- row_id == "Total"
+
+    if ((i %% 2) == 0 && !is_total) {
+      grid.rect(
+        x = unit((x_left + x_edges[length(x_edges)]) / 2, "npc"),
+        y = unit(y_center, "npc"),
+        width = unit(x_edges[length(x_edges)] - x_left, "npc"),
+        height = unit(body_h, "npc"),
+        gp = gpar(fill = "#ededed", col = NA)
+      )
+    }
 
     grid.text(
-      row_labels[[i]],
+      wrap_row_label(row_label),
       x = unit(x_edges[1] + 0.008, "npc"),
       y = unit(y_center, "npc"),
       just = c("left", "center"),
-      gp = gpar(fontfamily = "serif", fontface = if (is_total) "bold" else "plain", cex = 1.22)
+      gp = gpar(fontfamily = "serif", fontface = if (is_total) "bold" else "plain", cex = if (is_total) 0.98 else 0.86, lineheight = 1.02)
     )
 
     for (g in seq_along(outcome_order)) {
@@ -913,10 +949,10 @@ save_startup_bins_table_png <- function(table_data, output_png) {
         col_idx <- (g - 1) * length(bin_order) + b
         x_center <- (x_edges[2 + col_idx - 1] + x_edges[2 + col_idx]) / 2
         grid.text(
-          sprintf("%d%%", as.integer(pct[row_labels[[i]], col_key])),
+          format_cell(pct[row_id, col_key], abs_counts[row_id, col_key], denoms[row_id, col_key]),
           x = unit(x_center, "npc"),
           y = unit(y_center, "npc"),
-          gp = gpar(fontfamily = "serif", cex = 1.15)
+          gp = gpar(fontfamily = "serif", cex = 0.54, lineheight = 0.96)
         )
       }
     }
@@ -933,6 +969,17 @@ save_startup_bins_table_png <- function(table_data, output_png) {
         x = unit(c(x_left, x_edges[length(x_edges)]), "npc"),
         y = unit(c(y_line, y_line), "npc"),
         gp = gpar(col = "#6b6b6b", lwd = 0.8)
+      )
+    }
+  }
+
+  for (g in seq_along(outcome_order)) {
+    boundary_col <- 2 + g * length(bin_order)
+    if (boundary_col <= length(x_edges)) {
+      grid.lines(
+        x = unit(c(x_edges[boundary_col], x_edges[boundary_col]), "npc"),
+        y = unit(c(y_caption_bottom, y_bottom), "npc"),
+        gp = gpar(col = "#7a7a7a", lwd = 1.0)
       )
     }
   }
@@ -1032,9 +1079,14 @@ build_ownership_newcomer_table <- function(report_frame, smells_frame, developer
     return(NULL)
   }
 
-  row_labels <- c(present_ids, "Total")
-  owner_pct <- matrix(0, nrow = length(row_labels), ncol = length(outcome_order), dimnames = list(row_labels, outcome_order))
-  newcomer_pct <- matrix(0, nrow = length(row_labels), ncol = length(outcome_order), dimnames = list(row_labels, outcome_order))
+  present_names <- catalog$smell_name[match(present_ids, catalog$smell_id)]
+  row_ids <- c(present_ids, "Total")
+  row_labels <- c(sprintf("%s - %s", present_ids, present_names), "Total")
+  owner_pct <- matrix(0, nrow = length(row_ids), ncol = length(outcome_order), dimnames = list(row_ids, outcome_order))
+  newcomer_pct <- matrix(0, nrow = length(row_ids), ncol = length(outcome_order), dimnames = list(row_ids, outcome_order))
+  owner_abs <- matrix(0, nrow = length(row_ids), ncol = length(outcome_order), dimnames = list(row_ids, outcome_order))
+  newcomer_abs <- matrix(0, nrow = length(row_ids), ncol = length(outcome_order), dimnames = list(row_ids, outcome_order))
+  denominators <- matrix(0, nrow = length(row_ids), ncol = length(outcome_order), dimnames = list(row_ids, outcome_order))
 
   for (smell_id in present_ids) {
     subset_smell <- authored[authored$smell_id == smell_id, ]
@@ -1044,8 +1096,13 @@ build_ownership_newcomer_table <- function(report_frame, smells_frame, developer
       if (denom == 0) {
         next
       }
-      owner_pct[smell_id, outcome] <- round(100 * mean(subset_outcome$is_owner == 1L))
-      newcomer_pct[smell_id, outcome] <- round(100 * mean(subset_outcome$developer_type == "newcomer"))
+      owner_true <- sum(subset_outcome$is_owner == 1L)
+      newcomer_true <- sum(subset_outcome$developer_type == "newcomer")
+      owner_abs[smell_id, outcome] <- owner_true
+      newcomer_abs[smell_id, outcome] <- newcomer_true
+      denominators[smell_id, outcome] <- denom
+      owner_pct[smell_id, outcome] <- round(100 * owner_true / denom)
+      newcomer_pct[smell_id, outcome] <- round(100 * newcomer_true / denom)
     }
   }
 
@@ -1058,8 +1115,13 @@ build_ownership_newcomer_table <- function(report_frame, smells_frame, developer
     if (denom == 0) {
       next
     }
-    owner_pct["Total", outcome] <- round(100 * mean(subset_outcome$is_owner == 1L))
-    newcomer_pct["Total", outcome] <- round(100 * mean(subset_outcome$developer_type == "newcomer"))
+    owner_true <- sum(subset_outcome$is_owner == 1L)
+    newcomer_true <- sum(subset_outcome$developer_type == "newcomer")
+    owner_abs["Total", outcome] <- owner_true
+    newcomer_abs["Total", outcome] <- newcomer_true
+    denominators["Total", outcome] <- denom
+    owner_pct["Total", outcome] <- round(100 * owner_true / denom)
+    newcomer_pct["Total", outcome] <- round(100 * newcomer_true / denom)
   }
 
   list(
@@ -1067,9 +1129,13 @@ build_ownership_newcomer_table <- function(report_frame, smells_frame, developer
     outcome_order = outcome_order,
     outcome_header = outcome_header,
     n_by_outcome = n_by_outcome,
+    row_ids = row_ids,
     row_labels = row_labels,
     owner_pct = owner_pct,
-    newcomer_pct = newcomer_pct
+    newcomer_pct = newcomer_pct,
+    owner_abs = owner_abs,
+    newcomer_abs = newcomer_abs,
+    denominators = denominators
   )
 }
 
@@ -1083,31 +1149,35 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
     dir.create(output_dir, recursive = TRUE)
   }
 
+  row_ids <- table_data$row_ids
   row_labels <- table_data$row_labels
   outcome_order <- table_data$outcome_order
   outcome_header <- table_data$outcome_header
   n_by_outcome <- table_data$n_by_outcome
   owner_pct <- table_data$owner_pct
   newcomer_pct <- table_data$newcomer_pct
+  owner_abs <- table_data$owner_abs
+  newcomer_abs <- table_data$newcomer_abs
+  denoms <- table_data$denominators
 
   n_rows <- length(row_labels)
-  first_col_w <- 0.14
-  body_w <- 0.82
+  first_col_w <- 0.26
+  body_w <- 0.70
   subcols_per_group <- 2
   total_subcols <- length(outcome_order) * subcols_per_group
   cell_w <- body_w / total_subcols
 
-  x_left <- 0.035
+  x_left <- 0.02
   x_edges <- c(
     x_left,
     x_left + first_col_w,
     x_left + first_col_w + cumsum(rep(cell_w, total_subcols))
   )
 
-  top_margin <- 0.08
+  top_margin <- 0.06
   bottom_margin <- 0.06
   header1_h <- 0.09
-  header2_h <- 0.10
+  header2_h <- 0.11
   body_h <- (1 - top_margin - bottom_margin - header1_h - header2_h) / max(n_rows, 1)
 
   y_top <- 1 - top_margin
@@ -1115,7 +1185,7 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
   y_header2_bottom <- y_header1_bottom - header2_h
   y_bottom <- y_header2_bottom - n_rows * body_h
 
-  png(output_png, width = 2600, height = max(1200, 280 + as.integer(90 * n_rows)), res = 180)
+  png(output_png, width = 3600, height = max(1500, 420 + as.integer(120 * n_rows)), res = 190)
   grid.newpage()
 
   grid.rect(
@@ -1123,7 +1193,7 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
     y = unit(0.5, "npc"),
     width = unit(1, "npc"),
     height = unit(1, "npc"),
-    gp = gpar(fill = "#d9d9d9", col = NA)
+    gp = gpar(fill = "#f4f4f4", col = NA)
   )
 
   grid.lines(
@@ -1133,10 +1203,10 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
   )
 
   grid.text(
-    "Bad\npractice",
+    "Bad practice\n(ID - Name)",
     x = unit((x_edges[1] + x_edges[2]) / 2, "npc"),
     y = unit((y_top + y_header2_bottom) / 2, "npc"),
-    gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.35)
+    gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.08)
   )
 
   for (g in seq_along(outcome_order)) {
@@ -1164,16 +1234,16 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
     x_newc <- (x_edges[2 + end_idx - 1] + x_edges[2 + end_idx]) / 2
 
     grid.text(
-      "Owner\nTrue (%)",
+      "Owner\n% (abs/den)",
       x = unit(x_owner, "npc"),
       y = unit((y_header1_bottom + y_header2_bottom) / 2, "npc"),
-      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.16)
+      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.0)
     )
     grid.text(
-      "Newcomer\nTrue (%)",
+      "Newcomer\n% (abs/den)",
       x = unit(x_newc, "npc"),
       y = unit((y_header1_bottom + y_header2_bottom) / 2, "npc"),
-      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.16)
+      gp = gpar(fontfamily = "serif", fontface = "bold", cex = 1.0)
     )
   }
 
@@ -1183,16 +1253,36 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
     gp = gpar(col = "black", lwd = 1.5)
   )
 
+  wrap_row_label <- function(text, width = 30) {
+    paste(strwrap(text, width = width), collapse = "\n")
+  }
+
+  format_cell <- function(pct_value, abs_value, denom_value) {
+    sprintf("%d%%\n(%d/%d)", as.integer(pct_value), as.integer(abs_value), as.integer(denom_value))
+  }
+
   for (i in seq_len(n_rows)) {
     y_center <- y_header2_bottom - (i - 0.5) * body_h
-    is_total <- row_labels[[i]] == "Total"
+    row_id <- row_ids[[i]]
+    row_label <- row_labels[[i]]
+    is_total <- row_id == "Total"
+
+    if ((i %% 2) == 0 && !is_total) {
+      grid.rect(
+        x = unit((x_left + x_edges[length(x_edges)]) / 2, "npc"),
+        y = unit(y_center, "npc"),
+        width = unit(x_edges[length(x_edges)] - x_left, "npc"),
+        height = unit(body_h, "npc"),
+        gp = gpar(fill = "#ededed", col = NA)
+      )
+    }
 
     grid.text(
-      row_labels[[i]],
+      wrap_row_label(row_label),
       x = unit(x_edges[1] + 0.008, "npc"),
       y = unit(y_center, "npc"),
       just = c("left", "center"),
-      gp = gpar(fontfamily = "serif", fontface = if (is_total) "bold" else "plain", cex = 1.28)
+      gp = gpar(fontfamily = "serif", fontface = if (is_total) "bold" else "plain", cex = if (is_total) 1.1 else 0.95, lineheight = 1.03)
     )
 
     for (g in seq_along(outcome_order)) {
@@ -1202,16 +1292,16 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
       x_newc <- (x_edges[2 + end_idx - 1] + x_edges[2 + end_idx]) / 2
 
       grid.text(
-        sprintf("%d", as.integer(owner_pct[row_labels[[i]], outcome_order[[g]]])),
+        format_cell(owner_pct[row_id, outcome_order[[g]]], owner_abs[row_id, outcome_order[[g]]], denoms[row_id, outcome_order[[g]]]),
         x = unit(x_owner, "npc"),
         y = unit(y_center, "npc"),
-        gp = gpar(fontfamily = "serif", cex = 1.22)
+        gp = gpar(fontfamily = "serif", cex = 0.75, lineheight = 1.0)
       )
       grid.text(
-        sprintf("%d", as.integer(newcomer_pct[row_labels[[i]], outcome_order[[g]]])),
+        format_cell(newcomer_pct[row_id, outcome_order[[g]]], newcomer_abs[row_id, outcome_order[[g]]], denoms[row_id, outcome_order[[g]]]),
         x = unit(x_newc, "npc"),
         y = unit(y_center, "npc"),
-        gp = gpar(fontfamily = "serif", cex = 1.22)
+        gp = gpar(fontfamily = "serif", cex = 0.75, lineheight = 1.0)
       )
     }
 
@@ -1221,6 +1311,23 @@ save_ownership_newcomer_table_png <- function(table_data, output_png) {
         x = unit(c(x_left, x_edges[length(x_edges)]), "npc"),
         y = unit(c(y_line, y_line), "npc"),
         gp = gpar(col = "black", lwd = 1.5)
+      )
+    } else {
+      grid.lines(
+        x = unit(c(x_left, x_edges[length(x_edges)]), "npc"),
+        y = unit(c(y_line, y_line), "npc"),
+        gp = gpar(col = "#6b6b6b", lwd = 0.8)
+      )
+    }
+  }
+
+  for (g in seq_along(outcome_order)) {
+    boundary_col <- 2 + g * subcols_per_group
+    if (boundary_col <= length(x_edges)) {
+      grid.lines(
+        x = unit(c(x_edges[boundary_col], x_edges[boundary_col]), "npc"),
+        y = unit(c(y_top, y_bottom), "npc"),
+        gp = gpar(col = "#7a7a7a", lwd = 1.0)
       )
     }
   }

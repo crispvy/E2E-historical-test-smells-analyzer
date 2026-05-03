@@ -484,6 +484,103 @@ Rscript analyses/R_scripts/main.R --only ownership
 
 ---
 
+## d) Quantitative Occurrence Plots (JS/TS from CSV)
+
+Script:
+
+* `analyses/R_scripts/quantitative_occurrence_plots.R`
+
+This script generates quantitative plots of test-smell occurrence for both JavaScript and TypeScript.
+
+### ⚠️ Prerequisite (required CSV sources)
+
+To run this script, you must already have these files:
+
+* `analyses/reports/bad_smells_incidence_language_R.csv`
+* `analyses/reports/bad_smells_incidence_framework_R.csv`
+
+These CSV files are produced by the empirical R analysis incidence step (for example using `analyses/e2e_empirical_analyzer.R` with `--incidence-only`).
+
+If the CSV files are missing, the plotting script cannot run.
+
+### ▶️ Execution
+
+From project root:
+
+```powershell
+Rscript analyses/R_scripts/quantitative_occurrence_plots.R
+```
+
+### 🔀 Output
+
+The script creates language-specific folders and generates plots for each language:
+
+* `analyses/plots/quantitative_occurrence/javascript/`
+* `analyses/plots/quantitative_occurrence/typescript/`
+
+For each language, it generates:
+
+* occurrences by smell type
+* distinct tests by smell type
+* total occurrences by framework
+* framework × smell heatmap (occurrences)
+* framework × smell heatmap (distinct tests)
+
+---
+
+## e) Commit Message Keyword Match (DB update)
+
+Script:
+
+* `analyses/e2e_commit_classifier.py`
+
+This script computes keyword matches from commit messages and updates
+keyword-match flags directly in `report_commit_details`.
+
+The script reads from:
+
+* `historical_smells` (to get unique commits with smells)
+* `report_commit_details` (rows to update for the selected dataset)
+
+in:
+
+* `historical_smellsJS.db`
+* `historical_smellsTS.db`
+
+### ▶️ Execution
+
+From project root:
+
+```powershell
+python analyses/e2e_commit_classifier.py --dataset js
+python analyses/e2e_commit_classifier.py --dataset ts
+```
+
+### 🔀 Output
+
+No `.txt` report is generated.
+
+The script ensures these columns exist in `report_commit_details` and updates them for all rows of the selected dataset:
+
+* `match_keyword_improving`
+* `match_keyword_worsening`
+
+Each column is set to:
+
+* `true` if the commit message matches at least one keyword in the corresponding list
+* `false` otherwise
+
+During execution, the script also prints progress/status messages in the terminal (dataset, DB path, rows to update, preparation progress, write/commit steps).
+
+### Keyword sets used
+
+The script uses two keyword sets defined in `analyses/e2e_commit_classifier.py`:
+
+* improving keywords
+* worsening keywords
+
+---
+
 **⚠️​ Note:** All scripts support both single mode (specific repository/file) and batch mode (all files with smells in the DB). In case of errors, check that the database exists and that the parameters are correct.
 
 ---
