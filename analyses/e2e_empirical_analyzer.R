@@ -58,10 +58,10 @@ suppressPackageStartupMessages({
   if (is.null(a)) b else a
 }
 
-CATEGORY_ORDER <- c("No-change", "Initial", "Improving", "Worsening")
+CATEGORY_ORDER <- c("No-change", "Introduction", "Improving", "Worsening")
 CATEGORY_COLORS <- c(
   "No-change" = "#F8766D",
-  "Initial" = "#7CAE00",
+  "Introduction" = "#7CAE00",
   "Improving" = "#00BFC4",
   "Worsening" = "#C77CFF"
 )
@@ -196,14 +196,22 @@ classify_variation <- function(df) {
   ordered <- df[o, ]
 
   # Shift smells_count down by 1, fill 0 (like fillna(0) in Python)
-  prev <- c(0L, head(ordered$smells_count, -1))
-  delta <- ordered$smells_count - prev
+  prev <- c(NA_integer_, head(ordered$smells_count, -1))
+  delta <- ordered$smells_count - ifelse(is.na(prev), ordered$smells_count, prev)
 
-  variation <- ifelse(
-    delta < 0,
-    "Improving",
-    ifelse(delta > 0, ifelse(prev == 0, "Initial", "Worsening"), "No-change")
-  )
+  variation <- character(length(delta))
+  if (ordered$smells_count[1] > 0) {
+    variation[1] <- "Introduction"
+  } else {
+    variation[1] <- NA_character_
+  }
+  if (length(delta) > 1) {
+    variation[-1] <- ifelse(
+      delta[-1] < 0,
+      "Improving",
+      ifelse(delta[-1] > 0, ifelse(prev[-1] == 0, "Introduction", "Worsening"), "No-change")
+    )
+  }
 
   ordered$variation_type <- variation
   ordered
@@ -246,7 +254,9 @@ plot_ridge_manual <- function(frame, output_png, figure_width, figure_height, bw
   for (i in seq_along(CATEGORY_ORDER)) {
     category <- CATEGORY_ORDER[i]
     baseline <- i - 1
+
     vals <- frame$signed_days[frame$variation_type == category]
+    vals <- vals[!is.na(vals)]
 
     if (length(vals) == 0) {
       next
@@ -371,14 +381,14 @@ build_release_proximity_summary <- function(plot_data) {
     if (length(v) == 0) {
       return(NA_real_)
     }
-    as.numeric(median(v))
+    as.numeric(median(v, na.rm = TRUE))
   }, numeric(1))
 
   iqrs <- vapply(values_by_category, function(v) {
     if (length(v) == 0) {
       return(NA_real_)
     }
-    as.numeric(IQR(v))
+    as.numeric(IQR(v, na.rm = TRUE))
   }, numeric(1))
 
   summary_table <- data.frame(
@@ -693,7 +703,7 @@ read_report_developer_rows <- function(db_path) {
 }
 
 build_startup_bins_table <- function(report_frame, smells_frame, dataset_label) {
-  outcome_order <- c("No-change", "Initial", "Improving", "Worsening")
+  outcome_order <- c("No-change", "Introduction", "Improving", "Worsening")
   outcome_header <- c("No-change", "Introduction", "Improving", "Worsening")
   bin_order <- c("1w", "1m", "1y", ">1y")
 
@@ -1022,7 +1032,7 @@ save_startup_bins_table <- function(js_db_path, ts_db_path, project_root) {
 }
 
 build_ownership_newcomer_table <- function(report_frame, smells_frame, developer_frame, dataset_label) {
-  outcome_order <- c("No-change", "Initial", "Improving", "Worsening")
+  outcome_order <- c("No-change", "Introduction", "Improving", "Worsening")
   outcome_header <- c("No-change", "Introduction", "Improving", "Worsening")
 
   catalog <- get_test_smells_catalog()

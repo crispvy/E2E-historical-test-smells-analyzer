@@ -109,8 +109,10 @@ plot_occurrences_by_smell <- function(lang_df, language_label) {
     arrange(desc(occurrences_total)) %>%
     mutate(smell_type = fct_reorder(smell_type, occurrences_total))
 
+  color <- if (language_label %in% names(LANG_COLORS)) LANG_COLORS[[language_label]] else "#888888"
+
   ggplot(top_df, aes(x = smell_type, y = occurrences_total)) +
-    geom_col(fill = LANG_COLORS[[language_label]], alpha = 0.9) +
+    geom_col(fill = color, alpha = 0.9) +
     geom_text(
       aes(label = comma(occurrences_total)),
       hjust = -0.08,
@@ -138,8 +140,10 @@ plot_distinct_tests_by_smell <- function(lang_df, language_label) {
     arrange(desc(distinct_tests_total)) %>%
     mutate(smell_type = fct_reorder(smell_type, distinct_tests_total))
 
+  color <- if (language_label %in% names(LANG_COLORS)) scales::alpha(LANG_COLORS[[language_label]], 0.8) else scales::alpha("#888888", 0.8)
+
   ggplot(top_df, aes(x = smell_type, y = distinct_tests_total)) +
-    geom_col(fill = alpha(LANG_COLORS[[language_label]], 0.8)) +
+    geom_col(fill = color) +
     geom_text(
       aes(label = comma(distinct_tests_total)),
       hjust = -0.08,
@@ -201,36 +205,48 @@ plot_framework_totals <- function(framework_df, language_label) {
 }
 
 plot_framework_smell_heatmap <- function(framework_df, language_label, value_col, value_label) {
+  # Calcola la percentuale rispetto al totale per framework
   aggregated <- framework_df %>%
     group_by(framework, smell_type) %>%
-    summarise(metric = sum(.data[[value_col]], na.rm = TRUE), .groups = "drop") %>%
-    mutate(smell_type = fct_reorder(smell_type, metric, .fun = sum, .desc = TRUE))
+    summarise(metric = sum(.data[[value_col]], na.rm = TRUE), .groups = "drop")
 
-  max_metric <- suppressWarnings(max(aggregated$metric, na.rm = TRUE))
-  if (!is.finite(max_metric) || max_metric <= 0) {
+  totals <- aggregated %>%
+    group_by(framework) %>%
+    summarise(total = sum(metric, na.rm = TRUE), .groups = "drop")
+
+  aggregated <- aggregated %>%
+    left_join(totals, by = "framework") %>%
+    mutate(
+      percent = ifelse(total > 0, metric / total, 0),
+      percent_label = ifelse(metric > 0, sprintf("%.1f%%", percent * 100), ""),
+      smell_type = fct_reorder(smell_type, metric, .fun = sum, .desc = TRUE)
+    )
+
+  max_percent <- suppressWarnings(max(aggregated$percent, na.rm = TRUE))
+  if (!is.finite(max_percent) || max_percent <= 0) {
     aggregated <- aggregated %>% mutate(label_color = "#1F2937")
   } else {
     aggregated <- aggregated %>%
       mutate(
-        label_color = ifelse(metric / max_metric >= 0.55, "#FFFFFF", "#1F2937")
+        label_color = ifelse(percent / max_percent >= 0.55, "#FFFFFF", "#1F2937")
       )
   }
 
-  ggplot(aggregated, aes(x = framework, y = smell_type, fill = metric)) +
+  ggplot(aggregated, aes(x = framework, y = smell_type, fill = percent)) +
     geom_tile(color = "white", linewidth = 0.2) +
     geom_text(
-      aes(label = ifelse(metric > 0, comma(metric), ""), color = label_color),
+      aes(label = percent_label, color = label_color),
       size = 3,
       show.legend = FALSE
     ) +
     scale_color_identity() +
-    scale_fill_gradient(low = "#E9F5DB", high = "#1B4332", labels = comma) +
+    scale_fill_gradient(low = "#E9F5DB", high = "#1B4332", labels = scales::percent_format(accuracy = 1)) +
     labs(
-      title = paste0(language_label, " - Framework vs Smell Heatmap (", value_label, ")"),
-      subtitle = paste0("Intensity of ", tolower(value_label), " by framework and smell type"),
+      title = paste0(language_label, " - Framework vs Smell Heatmap (", value_label, " % )"),
+      subtitle = paste0("Percentuale di ", tolower(value_label), " per framework e smell type"),
       x = NULL,
       y = NULL,
-      fill = value_label
+      fill = paste0(value_label, " (%)")
     ) +
     theme_minimal(base_size = 12) +
     theme(
@@ -286,6 +302,7 @@ run <- function() {
       distinct_tests_total = distinct_tests
     )
 
+
   languages <- c("JavaScript", "TypeScript")
 
   for (lang in languages) {
@@ -309,6 +326,38 @@ run <- function() {
     save_plot(p4, file.path(lang_folder, paste0("4_framework_smell_heatmap_occurrences_", safe_filename(lang), ".png")), width = 16, height = 9)
     save_plot(p5, file.path(lang_folder, paste0("5_framework_smell_heatmap_distinct_tests_", safe_filename(lang), ".png")), width = 16, height = 9)
   }
+
+  cat("[status] Generating combined plots (JavaScript + TypeScript)...\n")
+  combined_folder <- file.path(output_root, "combined")
+  dir.create(combined_folder, recursive = TRUE, showWarnings = FALSE)
+
+  combined_lang_data <- language_long %>%
+    group_by(smell_type) %>%
+    summarise(
+      occurrences_total = sum(occurrences_total, na.rm = TRUE),
+      distinct_tests_total = sum(distinct_tests_total, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  combined_framework_data <- framework_df %>%
+    group_by(framework, smell_type) %>%
+    summarise(
+      occurrences = sum(occurrences, na.rm = TRUE),
+      distinct_tests = sum(distinct_tests, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  p1c <- plot_occurrences_by_smell(combined_lang_data, "Combined")
+  p2c <- plot_distinct_tests_by_smell(combined_lang_data, "Combined")
+  p3c <- plot_framework_totals(combined_framework_data, "Combined")
+  p4c <- plot_framework_smell_heatmap(combined_framework_data, "Combined", "occurrences", "Occurrences")
+  p5c <- plot_framework_smell_heatmap(combined_framework_data, "Combined", "distinct_tests", "Distinct tests")
+
+  save_plot(p1c, file.path(combined_folder, "1_occurrences_by_smell_combined.png"))
+  save_plot(p2c, file.path(combined_folder, "2_distinct_tests_by_smell_combined.png"))
+  save_plot(p3c, file.path(combined_folder, "3_framework_total_occurrences_combined.png"))
+  save_plot(p4c, file.path(combined_folder, "4_framework_smell_heatmap_occurrences_combined.png"), width = 16, height = 9)
+  save_plot(p5c, file.path(combined_folder, "5_framework_smell_heatmap_distinct_tests_combined.png"), width = 16, height = 9)
 
   cat("[status] All quantitative occurrence plots generated successfully.\n")
   cat(sprintf("[status] Output folder: %s\n", output_root))

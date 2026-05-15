@@ -2,191 +2,131 @@
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue)
 ![R](https://img.shields.io/badge/R-4.5.3+-red)
-![Status](https://img.shields.io/badge/Status-Prototype-orange)
-![Research](https://img.shields.io/badge/Purpose-Research-green)
+![Status](https://img.shields.io/badge/Status-Research_Prototype-orange)
+![Purpose](https://img.shields.io/badge/Purpose-Empirical_Research-green)
 
-⚠️ **Disclaimer**
+# 📄 Overview
 
-This project **is not a final version of the tool**.
+The **E2E Historical Test Smells Analyzer** is a research-oriented framework designed to support empirical studies on the evolution of **End-to-End (E2E) Web GUI test smells** software repositories from E2EGit dataset.
 
-The codebase may contain:
+The project combines:
 
-* experimental implementations
-* incomplete features
-* potential bugs
-* future changes and improvements
+- **Static analysis** for E2E Web GUI test smell detection
+- **Historical repository mining** through Git commit analysis
+- **Structured persistence** using SQLite databases
+- **Empirical and statistical analysis** using Python and R
 
----
+The framework focuses on understanding:
 
-# 📄 Research Goal
-
-The goal of this project is to support **empirical software engineering research** by analyzing how **End-to-End (E2E) test smells evolve over time in software repositories**.
-
-Specifically, this tool aims to:
-
-* detect **End-to-End test smells** in E2E test suites
-* analyze their **historical evolution across commits**
-* store the results in **structured databases for further analysis**
-* use the collected structured data for **empirical studies**
-
-# 📌 Project Overview
-
-The system combines **static analysis** and **repository mining**.
-
-Two main components are used:
-
-1. **E2E Test Smell Detection**
-
-A detector identifies smells inside test files.
-
-2. **Historical Repository Mining**
-
-The commit history of each repository is analyzed to understand **when smells appear and evolve**.
-
-The final output is stored in **SQLite databases**.
+- how E2E test smells evolve over time
+- when smells are introduced or removed
+- how developers interact with smelly test code
+- how smells relate to release cycles and ownership
 
 ---
 
-# 📌 Architecture
+# 🎯 Research Goals
 
-The analysis pipeline follows these steps:
+The main objectives of this project are:
 
-```
+- detect E2E test smells in JavaScript and TypeScript test suites
+- analyze their historical evolution across commits
+- reconstruct smell introduction/removal timelines
+- collect structured datasets for empirical software engineering research for reconstruction of smell introduction/removal timelines and quantitative and qualitative analyses of developer behavior
+
+---
+
+# 🧪 Supported Smells
+
+- Absolute URL
+- Absolute XPath
+- Assertion Roulette
+- Complex Test
+- Conditional Logic
+- Constructor Initialization
+- Duplicate Assert
+- Empty Test
+- Exception Handling
+- Global Variable
+- Magic Number
+- Misused Tag Locator
+- Mystery Guest
+- Non-Preferred Locator
+- Redundant Assertion
+- Redundant Print
+- Sensitive Equality
+- Sleepy Test
+- Unknown Test
+- Unstable Link Text
+
+---
+
+# 🏗️ System Architecture
+
+```text
 Repository Dataset
-        │
-        │
-        ▼
-E2E Test Smell Detector
-(static analysis)
-        │
-        │
-        ▼
-CSV Files
-(typescript_analysis.csv / javascript_analysis.csv)
-        │
-        │
-        ▼
-Historical Analyzer
-(PyDriller commit mining)
-        │
-        │
-        ▼
+        ↓
+Static Smell Detection
+        ↓
+CSV Intermediate Results
+        ↓
+Historical Mining (PyDriller)
+        ↓
 SQLite Databases
-(historical_smellsJS.db / historical_smellsTS.db)
-        │
-        │
-        ▼
-Empirical analysis
-(scripts and results in /analyses)
+        ↓
+Empirical Analysis & Visualization
 ```
 
 ---
 
-# 📌 Project Structure
+# ⚙️ Requirements
 
-```
-project-root
-│
-├── analyses/
-│  │
-│  ├── e2e_smells_analyzer.py
-│  ├── e2e_smells_report_plots.py
-│  ├── e2e_empirical_analyzer.R
-│  ├── R_scripts/
-│  │  ├── main.R
-│  │  └── jobs/
-│  │     ├── 01_ridge_release.R
-│  │     ├── 02_smells_catalog.R
-│  │     ├── 03_startup_tables.R
-│  │     └── 04_ownership_tables.R
-│  │
-│
-├── history_smells-analyzerJS.py
-├── history_smells-analyzerTS.py
-├── requirements.txt
-│
-└── e2e-test-smell-analyzer/
-```
+- Python 3.8+
+- pip
+- Git
+- R 4.5.3+
 
 ---
 
-# 🧪 Requirements
+# 🚀 Setup
 
-Before running the project ensure the following tools are installed:
-
-* [Python 3.8+](https://www.python.org/)
-* pip
-* [Git](https://git-scm.com/)
-* [R](https://www.r-project.org/)
-
----
-
-# Setup Instructions
-
-## 1. Download the E2E Test Smell Detector
-
-Download the repository [**e2e-test-smell-analyzer**](https://github.com/squidslab/e2e-test-smell-analyzer) as a `.zip` file.
-
-Then:
-
-1. Extract the archive
-2. Copy the folder into this project directory
-3. Open a terminal and move inside the folder
-
-```
-cd e2e-test-smell-analyzer
-```
-
----
-
-# 2. Configure the Detector
+### 1. Static Analysis
+Download the repository [**e2e-test-smell-analyzer**](https://github.com/squidslab/e2e-test-smell-analyzer) as a `.zip` file. Extract the archive, copy the folder into this project directory and then pen a terminal and move inside the folder.
 
 Follow the instructions contained in the **README of the detector** in order to install its dependencies and configure the environment.
 
----
-
-# 3. Generate Analysis Files
-
-Once configured, run the detector to generate the following files:
+Once configured, run the detector to generate the following files: 
 
 ```
 typescript_analysis.csv
 javascript_analysis.csv
 ```
 
-These files contain the **detected E2E test smells**.
+These files contain the files (and their respective repository) where **E2E Web GUI test smells** were detected.
 
----
+### 2. Historical Analysis
+> ⚠️ **WARNING**  
+> This script may take a long time to execute as it needs to clone the repositories one by one. It is strongly recommended to use the **E2E_NUM_WORKERS** parameter (see below) to speed up execution and to have at least **150GB** of free space available. Once you have run the historical analyzer on one of the two languages, continue to Chapter 3 of this readme and then run the historical analyzer for the other language.
 
-# 4. Install Python Dependencies
-
-Move to the **root directory of this project** and run:
+Move to the root directory of this project and install dependecies with:
 
 ```
 pip install -r requirements.txt
 ```
 
----
-
-# 5. Run the Historical Analysis
-
-Execute the following scripts:
+Then execute one of the following scripts:
 
 ```
 python history_smells-analyzerJS.py
 python history_smells-analyzerTS.py
 ```
 
-These scripts will analyze the commit history of the repositories and collect information about the evolution of the detected test smells.
+The system generates one of the two SQLite databases:
 
----
-
-# 🔀 Output
-
-The system generates two SQLite databases:
-
-* **historical_smellsJS.db**
-* **historical_smellsTS.db**
+```
+historical_smellsJS.db
+historical_smellsTS.db
+```
 
 The databases include information such as:
 
@@ -204,11 +144,9 @@ The databases include information such as:
 * method name
 * line number
 
-These datasets can later be used for **empirical analysis or statistical studies**.
+This databases will be used later for **empirical analysis** scripts.
 
----
-
-# ✴️ Environment Variables (Optional)
+#### ✴️ *Environment Variables (Optional)*
 
 The tool supports several environment variables to control the analysis.
 
@@ -223,77 +161,32 @@ The tool supports several environment variables to control the analysis.
 
 ---
 
-# ▶️ Example Execution (PowerShell)
+### 3. Configure empirical analysis tools
 
-```
-$env:E2E_TEST_MODE='1'
-$env:E2E_TEST_MAX_REPOS='1'
-$env:E2E_NUM_WORKERS='2'
+> ⚠️ **WARNING**  
+> This script requires the cloned repositories downloaded in step 2.
 
-python history_smells-analyzer.py
-```
+Now move inside the `analyses/` folder. Before executing the empirical analysis scripts, it is necessary to run the **e2e_smells_analyzer.py** which processes the databases generated during the historical analysis phase to perform a further level of data aggregation and transformation, producing three derived datasets:
 
-This configuration:
+* report_summary
+* report_commit_details
+* report_developer_details
 
-* enables **test mode**
-* analyzes **only one repository**
-* uses **two parallel workers**
+These outputs form the input for subsequent empirical analysis scripts, allowing further investigation of the collected data through the use of various graphs, tables and textual reports.
 
----
+This scripts can be run in two ways:
 
-
-# 6. Empirical analysis tools
-
-This section describes the scripts available in the `analyses/` folder for generating reports and visualizations from the historical databases.
-
----
-
-## Analysis for a single repository/file:
-
-The following section concerns the analysis and visualization of data for a single **repository/file**.
-
-
-
-## a) Textual Report of Ownership and Smells
-
-Script: `analyses/e2e_smells_analyzer.py`
-
-Generates ownership/smell analytics for a test file and persists the results in SQLite.
-
-The script uses the selected historical DB as the **main output** and stores structured report data in:
-
-* `report_summary`
-* `report_commit_details`
-* `report_developer_details`
-
-Text report generation (`.txt`) is **secondary** and only produced on request.
-
-**▶️ Single execution (for a repository / specific file):**
-
-```
-python analyses/e2e_smells_analyzer.py <repository> <file_name> --dataset js/ts
-```
-
-Generate also a `.txt` file (optional):
-
-```
-python analyses/e2e_smells_analyzer.py <repository> <file_name> --dataset js/ts --output analyses/reports/js/my_report.txt
-```
-
-**⏩ Batch execution (all files with smells):**
+#### ⏩ Batch execution (all files with smells, recommended):**
 
 ```
 python analyses/e2e_smells_analyzer.py --dataset js/ts
 ```
-
-Generate also `.txt` reports in batch mode (optional):
+#### ▶️ Single execution (for a repository / specific file):**
 
 ```
-python analyses/e2e_smells_analyzer.py --dataset js/ts --write-txt
+python analyses/e2e_smells_analyzer.py <repository> <file_name> --dataset js/ts
 ```
-
-**✴️ Main parameters:**
-
+#### ✴️ Main parameters
 * `<repository>`: repository name as stored in the DB
 * `<file_name>`: path or name of the test file
 * `--dataset`: required, `js` or `ts`
@@ -302,25 +195,26 @@ python analyses/e2e_smells_analyzer.py --dataset js/ts --write-txt
 * `--output`: (optional, single mode) output `.txt` path
 * `--write-txt`: (optional, batch mode) also generates `.txt` reports
 
-**🔀 Output:**
+### 4. Empirical analysis tools
 
-* **Primary output**: report data saved in SQLite report tables.
-* **Secondary output**: `.txt` files only when requested with `--output` (single mode) or `--write-txt` (batch mode), saved in `analyses/reports/<dataset>/`.
+#### 4.1 e2e_commit_classifier.py
 
-The summary now includes these transition metrics:
+Still in the `analyses/` folder, run then:
 
-* `Introduction commits (new smells introduced)`
-* `Improving commits (smells removed)`
-* `Worsening commits (smells added)`
+```
+python analyses/e2e_commit_classifier.py --dataset js
+python analyses/e2e_commit_classifier.py --dataset ts
+```
 
----
+This script performs a keyword-based classification of commit messages to enrich the empirical dataset with additional behavioral signals. 
 
-## b) Unified Plot Generation from Reports
+Specifically, it analyzes commit messages stored in the **report_commit_details** table and checks whether they contain predefined keywords associated with two categories: improving and worsening changes.
 
-Script: `analyses/e2e_smells_report_plots.py`
+No external output files are generated; instead, the enriched information is directly written back into the database. During execution, the script provides console logs to track progress, including dataset selection, database path, number of rows processed, and update/commit operations.
+
+#### 4.2 e2e_smells_report_plots.py
 
 After creating textual reports with `analyses/e2e_smells_analyzer.py`, this script generates a complete set of 5 charts for each report file:
-
 
 1. **Smell distribution**
 
@@ -342,248 +236,51 @@ After creating textual reports with `analyses/e2e_smells_analyzer.py`, this scri
 
 ![Smell co-occurrence heatmap](assets/5_smell_cooccurrence_heatmap.png)
 
-**▶️ Single execution (from one report):**
+Plots are saved under `analyses/plots/ts/` and `analyses/plots/js/`, inside one folder per repository/file (`<repo>_<file>`).
+
+This scripts can be run in two ways:
+
+#### ▶️ Single execution (from one report):
 
 ```
 python analyses/e2e_smells_report_plots.py --report analyses/reports/ts/<report_file>.txt
 ```
 
-**⏩ Batch execution (all reports):**
+#### ⏩ Batch execution (all reports):
 
 ```
 python analyses/e2e_smells_report_plots.py --reports-dir analyses/reports
 ```
+#### 4.3 e2e_empirical_analyzer.R
+This script (analyses/e2e_empirical_analyzer.R) performs the main empirical analysis phase of the project, using the processed datasets stored in historical_smellsJS.db and historical_smellsTS.db
 
-**✴️ Main parameters:**
+The output consists of both visual and tabular artifacts, including:
 
-* `--report`: (optional) path to one report `.txt` file
-* `--reports-dir`: (optional) root folder of report files (default: `analyses/reports`)
-* `--output-root`: (optional) root output folder (default: `analyses/plots`)
+* ridge plot visualizations of release distance distributions;
+* summary plots of release cycle proximity;
+* tables describing test smell distributions and startup-phase behavior;
+* ownership and newcomer analysis plots by bad practice;
+* CSV reports detailing bad smell incidence across languages and frameworks (only with the use of --incidence-only).
 
-**🔀 Output:**
-
-Plots are saved under `analyses/plots/ts/` and `analyses/plots/js/`, inside one folder per repository/file (`<repo>_<file>`).
-
----
-
- ## Aggregated / multi-repository analysis:
-
-The following section concerns statistical analyses and visualizations that aggregate data from all repositories/files, for a general study of the entire work.
-
-**⚠️​ Note:** To run the scripts in this section you must first run `analyses/e2e_smells_analyzer.py`
-
-## c) Empirical R Analysis (Aggregated JS/TS)
-
-Script:
-
-* `analyses/e2e_empirical_analyzer.R`
-
-This script performs aggregated empirical analyses from `historical_smellsJS.db` and `historical_smellsTS.db`.
-
-Main outputs include:
-
-* **ridge plots** of signed distance (days) from closest release by transition type (`No-change`, `Initial`, `Improving`, `Worsening`)
-* **release proximity summary tables**
-* **startup-bin tables** by bad practice and variation type
-* **ownership/newcomer tables** by bad practice and variation type
-* **bad-smell incidence tables** (global by language and detailed by framework)
-
-The script reads data from:
-
-* `report_commit_details`
-* `historical_smells`
-* `report_developer_details`
-
-in:
-
-* `historical_smellsJS.db`
-* `historical_smellsTS.db`
-
-### R execution (single script)
-
-From project root:
-
-```powershell
-Rscript analyses/e2e_empirical_analyzer.R
-```
-
-From `analyses/`:
-
-```powershell
-Rscript .\e2e_empirical_analyzer.R
-```
-
-Selective modes:
-
+#### ✴️ Main options for `e2e_empirical_analyzer.R`:
 * `--ridge-release-only`
 * `--smells-only`
 * `--startup-tables-only`
 * `--ownership-tables-only`
 * `--incidence-only`
 
-Incidence mode generates CSV summaries from both databases with:
+#### 4.4 quantitative_occurrence_plots.R
 
-* bad smell occurrences across all commits
-* number of distinct test files affected by each bad smell
-* split by language (JavaScript / TypeScript)
-* split by framework inside each language
+> ⚠️** Prerequisite** 
+> For this scripts CSV reports from e2e_empirical_analyzer.R are required. If the CSV files are missing, the plotting script cannot run.
 
-Optional parameters:
-
-* `--js-db <path>`
-* `--ts-db <path>`
-
-### ▶️ R execution (modular pipeline + parallel)
-
-Orchestrator script:
-
-* `analyses/R_scripts/main.R`
-
-Run all jobs sequentially:
-
-```powershell
-Rscript analyses/R_scripts/main.R
-```
-
-Run all jobs in parallel:
-
-```powershell
-Rscript analyses/R_scripts/main.R --parallel --workers 2
-```
-
-Run one specific job:
-
-```powershell
-Rscript analyses/R_scripts/main.R --only ridge
-Rscript analyses/R_scripts/main.R --only smells
-Rscript analyses/R_scripts/main.R --only startup
-Rscript analyses/R_scripts/main.R --only ownership
-```
-
-✴️ Main options for `main.R`:
-
-* `--parallel`
-* `--workers <n>`
-* `--only ridge|smells|startup|ownership`
-* `--js-db <path>`
-* `--ts-db <path>`
-
-### 🔀 Output files (examples)
-
-* `analyses/plots/release_distance_ridge_js_R.png`
-* `analyses/plots/release_distance_ridge_ts_R.png`
-* `analyses/plots/release_cycle_proximity_summary_js_R.png`
-* `analyses/plots/release_cycle_proximity_summary_ts_R.png`
-* `analyses/plots/test_smells_catalog_table_R.png`
-* `analyses/plots/startup_bins_by_bp_variation_js_R.png`
-* `analyses/plots/startup_bins_by_bp_variation_ts_R.png`
-* `analyses/plots/ownership_newcomer_by_bp_variation_js_R.png`
-* `analyses/plots/ownership_newcomer_by_bp_variation_ts_R.png`
-* `analyses/reports/bad_smells_incidence_language_R.csv`
-* `analyses/reports/bad_smells_incidence_framework_R.csv`
-
----
-
-## d) Quantitative Occurrence Plots (JS/TS from CSV)
-
-Script:
-
-* `analyses/R_scripts/quantitative_occurrence_plots.R`
-
-This script generates quantitative plots of test-smell occurrence for both JavaScript and TypeScript.
-
-### ⚠️ Prerequisite (required CSV sources)
-
-To run this script, you must already have these files:
-
-* `analyses/reports/bad_smells_incidence_language_R.csv`
-* `analyses/reports/bad_smells_incidence_framework_R.csv`
-
-These CSV files are produced by the empirical R analysis incidence step (for example using `analyses/e2e_empirical_analyzer.R` with `--incidence-only`).
-
-If the CSV files are missing, the plotting script cannot run.
-
-### ▶️ Execution
-
-From project root:
-
-```powershell
-Rscript analyses/R_scripts/quantitative_occurrence_plots.R
-```
-
-### 🔀 Output
-
-The script creates language-specific folders and generates plots for each language:
-
-* `analyses/plots/quantitative_occurrence/javascript/`
-* `analyses/plots/quantitative_occurrence/typescript/`
-
-For each language, it generates:
+For each language, this script generates for each language:
 
 * occurrences by smell type
 * distinct tests by smell type
 * total occurrences by framework
 * framework × smell heatmap (occurrences)
 * framework × smell heatmap (distinct tests)
-
----
-
-## e) Commit Message Keyword Match (DB update)
-
-Script:
-
-* `analyses/e2e_commit_classifier.py`
-
-This script computes keyword matches from commit messages and updates
-keyword-match flags directly in `report_commit_details`.
-
-The script reads from:
-
-* `historical_smells` (to get unique commits with smells)
-* `report_commit_details` (rows to update for the selected dataset)
-
-in:
-
-* `historical_smellsJS.db`
-* `historical_smellsTS.db`
-
-### ▶️ Execution
-
-From project root:
-
-```powershell
-python analyses/e2e_commit_classifier.py --dataset js
-python analyses/e2e_commit_classifier.py --dataset ts
-```
-
-### 🔀 Output
-
-No `.txt` report is generated.
-
-The script ensures these columns exist in `report_commit_details` and updates them for all rows of the selected dataset:
-
-* `match_keyword_improving`
-* `match_keyword_worsening`
-
-Each column is set to:
-
-* `true` if the commit message matches at least one keyword in the corresponding list
-* `false` otherwise
-
-During execution, the script also prints progress/status messages in the terminal (dataset, DB path, rows to update, preparation progress, write/commit steps).
-
-### Keyword sets used
-
-The script uses two keyword sets defined in `analyses/e2e_commit_classifier.py`:
-
-* improving keywords
-* worsening keywords
-
----
-
-**⚠️​ Note:** All scripts support both single mode (specific repository/file) and batch mode (all files with smells in the DB). In case of errors, check that the database exists and that the parameters are correct.
-
----
 
 # 🚹 Contributors
 
