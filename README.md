@@ -271,7 +271,7 @@ The output consists of both visual and tabular artifacts, including:
 
 #### 4.4 quantitative_occurrence_plots.R
 
-> ⚠️** Prerequisite** 
+> ⚠️ **PREREQUISITE**  
 > For this scripts CSV reports from e2e_empirical_analyzer.R are required. If the CSV files are missing, the plotting script cannot run.
 
 For each language, this script generates for each language:

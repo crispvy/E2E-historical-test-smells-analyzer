@@ -350,13 +350,19 @@ build_release_proximity_summary <- function(plot_data) {
     stop("No data available to build release-cycle proximity summary.")
   }
 
-  col_labels <- c("No-change", "Introd.", "Improv.", "Worsen.")
+  col_labels <- c(
+    "No-change" = "No-change",
+    "Introduction" = "Introd.",
+    "Improving" = "Improv.",
+    "Worsening" = "Worsen."
+  )
   thresholds <- c(7, 14, 30)
 
   values_by_category <- lapply(CATEGORY_ORDER, function(category) {
-    abs(plot_data$signed_days[plot_data$variation_type == category])
+    values <- abs(as.numeric(plot_data$signed_days[plot_data$variation_type == category]))
+    values[!is.na(values)]
   })
-  names(values_by_category) <- col_labels
+  names(values_by_category) <- CATEGORY_ORDER
 
   format_int <- function(x) {
     if (is.na(x)) "NA" else sprintf("%d", as.integer(round(x)))
@@ -366,15 +372,17 @@ build_release_proximity_summary <- function(plot_data) {
     if (is.na(x)) "NA" else sprintf(paste0("%.", digits, "f"), x)
   }
 
+  pct_within_threshold <- function(values, threshold) {
+    if (length(values) == 0) {
+      return(NA_real_)
+    }
+    (sum(values <= threshold) / length(values)) * 100
+  }
+
   num_commits <- vapply(values_by_category, length, integer(1))
 
   within_rows <- lapply(thresholds, function(k) {
-    vapply(values_by_category, function(v) {
-      if (length(v) == 0) {
-        return(NA_real_)
-      }
-      mean(v <= k) * 100
-    }, numeric(1))
+    vapply(values_by_category, pct_within_threshold, numeric(1), threshold = k)
   })
 
   medians <- vapply(values_by_category, function(v) {
@@ -400,41 +408,20 @@ build_release_proximity_summary <- function(plot_data) {
       "Median |d|",
       "IQR |d|"
     ),
-    "No-change" = c(
-      format_int(num_commits[["No-change"]]),
-      format_decimal(within_rows[[1]][["No-change"]], 1),
-      format_decimal(within_rows[[2]][["No-change"]], 1),
-      format_decimal(within_rows[[3]][["No-change"]], 1),
-      format_int(medians[["No-change"]]),
-      format_decimal(iqrs[["No-change"]], 1)
-    ),
-    "Introd." = c(
-      format_int(num_commits[["Introd."]]),
-      format_decimal(within_rows[[1]][["Introd."]], 1),
-      format_decimal(within_rows[[2]][["Introd."]], 1),
-      format_decimal(within_rows[[3]][["Introd."]], 1),
-      format_int(medians[["Introd."]]),
-      format_decimal(iqrs[["Introd."]], 1)
-    ),
-    "Improv." = c(
-      format_int(num_commits[["Improv."]]),
-      format_decimal(within_rows[[1]][["Improv."]], 1),
-      format_decimal(within_rows[[2]][["Improv."]], 1),
-      format_decimal(within_rows[[3]][["Improv."]], 1),
-      format_int(medians[["Improv."]]),
-      format_decimal(iqrs[["Improv."]], 1)
-    ),
-    "Worsen." = c(
-      format_int(num_commits[["Worsen."]]),
-      format_decimal(within_rows[[1]][["Worsen."]], 1),
-      format_decimal(within_rows[[2]][["Worsen."]], 1),
-      format_decimal(within_rows[[3]][["Worsen."]], 1),
-      format_int(medians[["Worsen."]]),
-      format_decimal(iqrs[["Worsen."]], 1)
-    ),
     check.names = FALSE,
     stringsAsFactors = FALSE
   )
+
+  for (category in CATEGORY_ORDER) {
+    summary_table[[col_labels[[category]]]] <- c(
+      format_int(num_commits[[category]]),
+      format_decimal(within_rows[[1]][[category]], 1),
+      format_decimal(within_rows[[2]][[category]], 1),
+      format_decimal(within_rows[[3]][[category]], 1),
+      format_int(medians[[category]]),
+      format_decimal(iqrs[[category]], 1)
+    )
+  }
 
   summary_table
 }
